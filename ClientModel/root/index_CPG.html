@@ -1,0 +1,151 @@
+<html>
+
+    <head>
+        <!-- Load TensorFlow.js -->
+        <!-- Get latest version at https://github.com/tensorflow/tfjs -->
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"> </script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/bootstrap.min.js"></script>
+        <script type="text/javascript" src="js/tokenizer.js"></script>
+        <link rel="stylesheet" href="css/bootstrap.min.css" />
+        <link rel="stylesheet" href="css/home.css" />
+    </head>
+    <body class="text-center container">
+        <div class="text-left form-signin">
+            <!-- <img class="mb-4" src="/docs/4.6/assets/brand/bootstrap-solid.svg" alt="" width="72" height="72"> -->
+            <h1 class="h3 mb-3 font-weight-normal">Input Password: </h1>
+            <label for="inputPassword" class="sr-only">Password plaintext</label>
+            <input type="password" class="form-control" placeholder="password" required="" id="pwd_input">
+            <button class="btn btn-lg btn-primary btn-block" onclick="eval_pwd()" id="btn-check">Check</button>
+            <br/>
+            <div class="jumbotron pwd-info">
+                <h4 class="display-6">Strength for each character: </h1>
+                <div class="progress" id="progress"></div>
+                <hr class="my-4">
+                <div id="message" style="min-height: 30px;"></div>
+            </div>
+            
+        </div>
+        
+        <!-- <input placeholder="Enter your password" name="password" type="password" id="pwd_input"/>
+        <button onclick="eval_pwd()">Check</button>
+        <div id="message"></div> -->
+    </body>
+    <script>
+        var model;
+        var config=null;
+        var tokenizer =null;
+        var res;
+
+        async function load(){
+            var start = new Date().getTime();
+            model = await tf.loadGraphModel('model/CPG/model.json');
+            console.log("Completely load NN model")
+            var end = new Date().getTime();
+            console.log("Model loading time: "+(end-start) + " s");
+
+            start = new Date().getTime();
+            await $.ajax({ 
+                type:"GET", 
+                url:"model/CPG/vocab.json", 
+                dataType:"json", 
+                success:function(data){ 
+                    config = data;
+                    tokenizer = new Tokenizer(config);
+                    console.log("Configuration load successfully");
+                } 
+            }); 
+            end = new Date().getTime();
+            console.log("Vocaburary loading time: "+(end-start) + " s");
+
+            /* const tokens = tf.tensor2d([[9,8,7,6,5]]);
+            const segments = tf.tensor2d([[0, 0, 0, 0, 0]]);
+            */console.log(model.inputs)/*
+            const prediction = await model.executeAsync({'Input-Token': tokens, 'Input-Segment': segments});
+            console.log(prediction.arraySync()) */
+
+            // console.log(trans.ops);
+            // console.log(trans.recover("123456",[1,2,3,4,5,6,210]));
+
+            /* let pwd = "123456";
+            let cpg = new CPGEvaluator(model, tokenizer);
+            let input = cpg.encode_input(pwd);
+            console.log(input);
+            const prediction = await model.executeAsync(input);
+            const result = cpg.evaluate(pwd, prediction.arraySync());
+            console.log(result); */
+        }
+
+        async function predict(pwd){
+            let cpg = new CPGEvaluator(model, tokenizer);
+            let input = cpg.encode_input(pwd);
+            const prediction = await model.executeAsync(input);
+            const result = cpg.evaluate(pwd, prediction.arraySync());
+            console.log(result);
+            return result;
+        }
+
+        async function eval_pwd(){
+            if(tokenizer == null){
+                show_result("Wait for model loading...")
+                return;
+            }
+            var start = new Date().getTime();
+            let value = document.getElementById("pwd_input").value;
+            let probs = await predict(value);
+            let msg = "";
+            for(let i = 0; i < value.length; i++){
+                msg += get_item(value[i], probs[i]);
+            }
+            var end = new Date().getTime();
+            console.log(probs);
+            show_result(msg);
+        }
+
+
+        function getColorByBaiFenBi(bili){
+            //var 百分之一 = (单色值范围) / 50;  单颜色的变化范围只在50%之内
+            var one = (255+255) / 100;  
+            var r=0;
+            var g=0;
+            var b=0;
+        
+            if ( bili < 50 ) { 
+                // 比例小于50的时候红色是越来越多的,直到红色为255时(红+绿)变为黄色.
+                r = one * bili;
+                g=255;
+            }
+            if ( bili >= 50 ) {
+                // 比例大于50的时候绿色是越来越少的,直到0 变为纯红
+                g =  255 - ( (bili - 50 ) * one) ;
+                r = 255;
+            }
+            r = parseInt(r);// 取整
+            g = parseInt(g);// 取整
+            b = parseInt(b);// 取整
+
+            return "rgb("+r+","+g+","+b+")";
+                
+        }
+
+        function get_item(char, prob){
+            // console.log(char, prob);
+            let levels = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.001, 0.0001, 0.00001];
+            // let colors = [0  ,  10,  20,  30,  40,   50,   60,   70,   75,    80,  85,    90,    100];
+            let colors = [100 ,  90,  85,  80,  75,   70,   60,   50,   30,    20,  10,    5,    0];
+            let index = 0;
+            while(index < levels.length && prob < levels[index]){
+                index += 1;
+            }
+            // console.log(colors[index]);
+            return "<span style='background-color:"+getColorByBaiFenBi(colors[index])+";font-size:50px'>" +char + "</span>";
+        }
+
+        function show_result(msg){
+            document.getElementById("message").innerHTML = msg
+        }
+        load();
+    </script>
+<html>
+

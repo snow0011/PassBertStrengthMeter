@@ -1,0 +1,264 @@
+<html>
+
+    <head>
+        <!-- Load TensorFlow.js -->
+        <!-- Get latest version at https://github.com/tensorflow/tfjs -->
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"> </script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/bootstrap.min.js"></script>
+        <link rel="stylesheet" href="css/bootstrap.min.css" />
+        <link rel="stylesheet" href="css/home.css" />
+    </head>
+    <body class="text-center container">
+        <div class="text-left form-signin">
+            <!-- <img class="mb-4" src="/docs/4.6/assets/brand/bootstrap-solid.svg" alt="" width="72" height="72"> -->
+            <h1 class="h3 mb-3 font-weight-normal">请输入待检测口令：</h1>
+            <label for="inputPassword" class="sr-only">口令文本</label>
+            <input type="password" class="form-control" placeholder="待检测口令" required="" id="pwd_input">
+            <button class="btn btn-lg btn-primary btn-block" onclick="eval_pwd()" id="btn-check">检测</button>
+            <br/>
+            <div class="jumbotron pwd-info">
+                <h4 class="display-6">检测结果: </h1>
+                <div class="progress" id="progress"></div>
+                <hr class="my-4">
+                <div id="message" style="min-height: 30px;"></div>
+            </div>
+            
+        </div>
+        
+        <!-- <input placeholder="Enter your password" name="password" type="password" id="pwd_input"/>
+        <button onclick="eval_pwd()">Check</button>
+        <div id="message"></div> -->
+    </body>
+    <script>
+        var model;
+        var config=null;
+        var chartab =null;
+        var res;
+
+        class CharacterTable{
+            constructor(config){
+                this.config = config
+                this.char_to_index = new Map()
+                this.index_to_char = new Map()
+                this.char_max = self.config.subwords.reduce((total,item)=>{return Math.max(total,item.length)})
+                for(let i=0; i < config.subwords.length; i++){
+                    this.char_to_index[config.subwords[i]] = i;
+                    this.index_to_char[i] = config.subwords[i];
+                }
+            }
+
+            encode_to_array(pwd) {
+                let list = new Array(this.config.context_len);
+                for (let i=0; i<this.config.context_len;i++){
+                    if(i<pwd.length){
+                        list[i] = this.char_to_index[pwd[i]];
+                    }
+                    else{
+                        list[i] = 0;
+                    }
+                }
+                let p = tf.tensor1d(list,"int32")
+                if(!this.config.embedding){
+                    p= tf.oneHot(p, this.config.subwords.length)
+                }
+                let X = p.expandDims(0);
+                return X;
+            }
+
+            char_index(ch){
+                return this.char_to_index[ch];
+            }
+
+            segment_pwd(pwd){
+                let res = new Array();
+                let index = 0;
+                console.log(pwd)
+                for(let i = 0; i<pwd.length; i++){
+                    if(index == i){
+                        for(let j = this.char_max; j > 0; j--){
+                            if(this.char_to_index[pwd.substring(i,i+j)+""]){
+                                index = i+j;
+                                res.push(pwd.substring(i,i+j));
+                                break;
+                            }
+                        }
+                    }
+                }
+                if(index < pwd.length){
+                    res.push(pwd.substring(index,pwd.length));
+                }
+                return res;
+            }
+        }
+
+        function get_pwd_pairs(pwd){
+            res = []
+            for (let i = 0; i < config.context_len && i<pwd.length; i++){
+                res.push([pwd.slice(0,i),pwd[i]])
+            }
+            if(pwd.length <= config.context_len){
+                return res;
+            }
+            for(let i = 0; config.context_len+i<pwd.length;i++){
+                res.push([pwd.slice(i, config.context_len+i),pwd[config.context_len+i]])
+            }
+            return res;
+        }
+
+        async function load(){
+            var start = new Date().getTime();
+            model = await tf.loadLayersModel('model/model.json');
+            console.log("Completely load NN model")
+
+            await $.ajax({ 
+                type:"GET", 
+                url:"model/csdn-config.json", 
+                dataType:"json", 
+                success:function(data){ 
+                    config = data
+                    console.log("Configuration load successfully")
+                } 
+            }); 
+            while(config == null){}
+            chartab = new CharacterTable(config)
+            console.log(config.version)
+            var end = new Date().getTime();
+            console.log("模型加载时间："+(end-start));
+        }
+
+        function predict(pwd){
+            /* Model input [None, 10, 96] */
+            const ys = tf.randomNormal([1, 10, 96]);
+            /* Predicttion model.predict(model.input) */
+            const prediction = model.predict(ys);
+        }
+
+        function probs(pwd){
+            pairs = get_pwd_pairs(pwd);
+            prob = 1.0
+            res = []
+            for (let i = 0; i < pairs.length; i++){
+                const pwd = pairs[i][0]
+                const target = chartab.char_index(pairs[i][1])
+                const X = chartab.encode_to_array(pwd)
+                const prediction = model.predict(X).arraySync();
+                prob *= prediction[0][target]
+                fn = i=>{return i>prediction[0][target]}
+                predict_index = prediction[0].filter(fn).length
+                res.push([prediction[0][target],pairs[i][1],prediction[0],predict_index])
+            }
+            return [prob,res];
+        }
+
+        function binarySearch(ar, el, compare_fn) {
+            var m = 0;
+            var n = ar.length - 1;
+            while (m <= n) {
+                var k = (n + m) >> 1;
+                var cmp = compare_fn(el, ar[k]);
+                if (cmp > 0) {
+                    m = k + 1;
+                } else if(cmp < 0) {
+                    n = k - 1;
+                } else {
+                    return k;
+                }
+            }
+            return m;
+        }
+
+        function guess_number(prob){
+            const list = config.guess_table;
+            /* 概率从大到小 */
+            const index = binarySearch(list, prob, (x,y)=>{
+                return x - y[0];
+            });
+            if(index <= 0){
+                return Infinity;
+            }
+            if(index >= config.guess_table.length){
+                return 1;
+            }
+            return Math.floor(config.guess_table[index][1]);
+        }
+
+
+        function eval_pwd(){
+            if(chartab == null){
+                alert("Wait for model loading...")
+            }
+            var start = new Date().getTime();
+            value = document.getElementById("pwd_input").value;
+            pwd = chartab.segment_pwd(value);
+            prob = probs(pwd);
+            number = guess_number(prob[0]);
+            var end = new Date().getTime();
+            console.log(pwd);
+            console.log(prob);
+            res = prob
+            build_progress_bar(prob[1], pwd.length)
+            show_result("口令概率："+prob[0]+"<br/>"+"口令猜测数："+number+"<br/>"+"评估时间："+(end-start)+"ms<br/>");
+        }
+
+        function get_stars(info){
+            len=info[1].length
+            res = "";
+            for(let i = 0; i < len; i++){
+                res += "*";
+            }
+            return info[1];
+            // return res;
+        }
+
+        function get_color_by(info,total){
+            rank = info[3]
+            // console.log(info[0],rank,total)
+            rank = rank/total;
+            if(rank < 0.05 && info[0] >= 0.3){
+                return "bg-danger";
+            }
+            if(rank < 0.15 && info[0] >= 0.1){
+                return "bg-warning";
+            }
+            if(rank < 0.35){
+                return "bg-info";
+            }
+            if(rank < 0.6){
+                return "bg-success";
+            }
+            return "";
+        }
+
+        function get_item(info,pwd_len){
+            console.log(info)
+            let color = get_color_by(info, config.subwords.length);
+            let length = Math.floor(info[1].length *100 / pwd_len)
+            let stars = get_stars(info)
+            return '<div class="progress-bar ' 
+                + color 
+                +'" role="progressbar" style="width: ' 
+                + length 
+                + '%" aria-valuenow="'
+                +length
+                +'" aria-valuemin="0" aria-valuemax="100">'
+                +stars
+                +'</div>';
+        }
+
+        function build_progress_bar(probs,pwd_len){
+            let res = "";
+            for(let i = 0; i < probs.length; i++){
+                res += get_item(probs[i], pwd_len);
+            }
+            document.getElementById("progress").innerHTML = res;
+        }
+
+        function show_result(msg){
+            document.getElementById("message").innerHTML = msg
+        }
+        load();
+    </script>
+<html>
+

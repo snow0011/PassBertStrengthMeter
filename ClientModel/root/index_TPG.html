@@ -1,0 +1,176 @@
+<html>
+
+    <head>
+        <!-- Load TensorFlow.js -->
+        <!-- Get latest version at https://github.com/tensorflow/tfjs -->
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"> </script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/bootstrap.min.js"></script>
+        <script type="text/javascript" src="js/tokenizer.js"></script>
+        <link rel="stylesheet" href="css/bootstrap.min.css" />
+        <link rel="stylesheet" href="css/home.css" />
+    </head>
+    <body class="text-center container">
+        <div class="text-left form-signin">
+            <!-- <img class="mb-4" src="/docs/4.6/assets/brand/bootstrap-solid.svg" alt="" width="72" height="72"> -->
+            <h1 class="h3 mb-3 font-weight-normal">Input password to evaluate: </h1>
+            <input type="password" class="form-control" placeholder="evaluate password" required="" id="pwd_input">
+            <div class="form-group">
+                <label for="exampleFormControlTextarea1">Leak passwords:</label>
+                <textarea class="form-control" id="leak_pwds" rows="3" placeholder="each password each line">123456&#10password</textarea>
+            </div>
+            <button class="btn btn-lg btn-primary btn-block" onclick="eval_pwd()" id="btn-check">Check</button>
+            <br/>
+            <div class="jumbotron pwd-info">
+                <h4 class="display-6">Result: </h1>
+                <div class="progress" id="progress"></div>
+                <hr class="my-4">
+                <div id="message" style="min-height: 30px;"></div>
+            </div>
+            
+        </div>
+        
+        <!-- <input placeholder="Enter your password" name="password" type="password" id="pwd_input"/>
+        <button onclick="eval_pwd()">Check</button>
+        <div id="message"></div> -->
+    </body>
+    <script>
+        var model;
+        var config=null;
+        var tokenizer =null;
+        var res;
+
+        async function load(){
+            var start = new Date().getTime();
+            model = await tf.loadGraphModel('model/TPG/model.json');
+            console.log("Completely load NN model")
+            var end = new Date().getTime();
+            console.log("Model loading time: "+(end-start) + " s");
+
+            start = new Date().getTime();
+            await $.ajax({ 
+                type:"GET", 
+                url:"model/TPG/vocab.json", 
+                dataType:"json", 
+                success:function(data){ 
+                    config = data;
+                    tokenizer = new Tokenizer(config);
+                    console.log("Configuration load successfully");
+                } 
+            }); 
+            end = new Date().getTime();
+            console.log("Vocaburary loading time: "+(end-start) + " s");
+        }
+
+        async function predict(pwd){
+            let trans = new InplaceDict();
+            //console.log(trans.ops);
+            //console.log(trans.recover("123456",[1,2,3,4,5,6,210]));
+
+            let tpg = new TPGEvaluator(model, tokenizer);
+            const prediction = await model.executeAsync(tpg.encode_input(pwd));
+            console.log(prediction.arraySync())
+            let ans = tpg.top_k(prediction.arraySync(), 100);
+            let targets = [];
+            for(let item of ans){
+                let target = trans.recover(pwd, item[0]);
+                targets.push([target, item[1]]);
+            }
+            return targets;
+        }
+
+        async function eval_pwd(){
+            if(model == null){
+                show_result("Wait for model loading...")
+                return;
+            }
+            var start = new Date().getTime();
+            let value = document.getElementById("pwd_input").value;
+            let leak_pwds = document.getElementById("leak_pwds").value;
+            let pwds = leak_pwds.split(/[(\r\n)\r\n]+/);
+            console.log(pwds);
+            let res = [];
+            for(let pwd of pwds){
+                let ans = await predict(pwd);
+                let count = 0;
+                for(let item of ans){
+                    count += 1;
+                    //console.log(item);
+                    if(item[0] == (value)){
+                        res.push([pwd,item[0],item[1], count]);
+                    }
+                }
+            }
+            
+            let msg = '<table class="table"><tbody><tr><th scope="col">Leak</th><th scope="col">Target</th><th scope="col">Probability</th><th scope="col">Guess</th></tr><thead></thead>';
+            
+            for(let item of res){
+                msg += '<tr>' + '<td>' + item[0] + '</td><td>' + item[1] + '</td><td>'+ item[2] + '</td><td>' + item[3] + '</td>' + '</tr>';
+            }
+
+            msg += '</tbody></table>';
+            var end = new Date().getTime();
+            show_result(msg);
+        }
+
+        function get_stars(info){
+            len=info[1].length
+            res = "";
+            for(let i = 0; i < len; i++){
+                res += "*";
+            }
+            return info[1];
+            // return res;
+        }
+
+        function get_color_by(info,total){
+            rank = info[3]
+            // console.log(info[0],rank,total)
+            rank = rank/total;
+            if(rank < 0.05 && info[0] >= 0.3){
+                return "bg-danger";
+            }
+            if(rank < 0.15 && info[0] >= 0.1){
+                return "bg-warning";
+            }
+            if(rank < 0.35){
+                return "bg-info";
+            }
+            if(rank < 0.6){
+                return "bg-success";
+            }
+            return "";
+        }
+
+        function get_item(info,pwd_len){
+            console.log(info)
+            let color = get_color_by(info, config.subwords.length);
+            let length = Math.floor(info[1].length *100 / pwd_len)
+            let stars = get_stars(info)
+            return '<div class="progress-bar ' 
+                + color 
+                +'" role="progressbar" style="width: ' 
+                + length 
+                + '%" aria-valuenow="'
+                +length
+                +'" aria-valuemin="0" aria-valuemax="100">'
+                +stars
+                +'</div>';
+        }
+
+        function build_progress_bar(probs,pwd_len){
+            let res = "";
+            for(let i = 0; i < probs.length; i++){
+                res += get_item(probs[i], pwd_len);
+            }
+            document.getElementById("progress").innerHTML = res;
+        }
+
+        function show_result(msg){
+            document.getElementById("message").innerHTML = msg
+        }
+        load();
+    </script>
+<html>
+

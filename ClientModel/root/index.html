@@ -1,0 +1,319 @@
+<html>
+
+    <head>
+        <!-- Load TensorFlow.js -->
+        <!-- Get latest version at https://github.com/tensorflow/tfjs -->
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"> </script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+        <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js" integrity="sha384-9/reFTGAW83EW2RDu2S0VKaIzap3H66lZH81PoYlFhbGU+6BZp6G7niu735Sk7lN" crossorigin="anonymous"></script>
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/bootstrap.min.js"></script>
+        <script type="text/javascript" src="js/tokenizer.js"></script>
+        <link rel="stylesheet" href="css/bootstrap.min.css" />
+        <link rel="stylesheet" href="css/home.css" />
+    </head>
+    <body class="text-center container">
+        <div class="text-left form-signin">
+            <!-- <img class="mb-4" src="/docs/4.6/assets/brand/bootstrap-solid.svg" alt="" width="72" height="72"> -->
+            <h5 class="h5 mb-2 font-weight-normal">Input password to evaluate: </h5>
+            <!-- <input type="password" class="form-control" placeholder="evaluate password" id="pwd_input"> -->
+            
+            <div class="input-group">
+                <input type="password" class="form-control" aria-label="evaluate password" placeholder="password" id="pwd_input">
+                <div class="input-group-append">
+                    <button class="btn btn-lg btn-primary btn-block" onclick="eval_pwd()" id="btn-check">Check</button>
+                    <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown" aria-expanded="false">
+                        <span class="sr-only">Toggle Dropdown</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        <span class="dropdown-item">Settings</span>
+                        <div role="separator" class="dropdown-divider"></div>
+                        <a class="dropdown-item" data-toggle="collapse" href="#leakPwdCollapse" role="button" aria-expanded="false" aria-controls="leakPwdCollapse">Select Leak Passwords</a>
+                        <a id="btn-topk" class="dropdown-item" href="#" onclick="change_topk()">Top 100</a>
+                        <a id="btn-visible" class="dropdown-item" href="#" onclick="change_hidden_state()">Visible</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group collapse" id="leakPwdCollapse">
+                <label for="exampleFormControlTextarea1">Leak passwords:</label>
+                <textarea class="form-control" id="leak_pwds" rows="3" placeholder="each password each line">123456&#10password</textarea>
+            </div>
+            <!-- <div class="btn-group" role="group">
+                <button class="btn btn-lg btn-primary btn-block" onclick="eval_pwd()" id="btn-check">Check</button>
+                <div class="btn-group" role="group">
+                    <button id="btnGroupDrop" type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                      Settings
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="btnGroupDrop">
+                      <a class="dropdown-item" data-toggle="collapse" href="#leakPwdCollapse" role="button" aria-expanded="false" aria-controls="leakPwdCollapse">Select Leak Passwords</a>
+                    </div>
+                </div>
+            </div> -->
+            
+            <!-- <br/> -->
+            <!-- <div class="jumbotron pwd-info">
+                <h5 class="display-6">Strength for each character in password: </h5>
+                <div id="cpg-message" style="min-height: 30px;"></div>
+                <hr class="my-4">
+                <h5 class="display-6">Potential risk under target guessing: </h5>
+                <div id="tpg-message" style="min-height: 30px;"></div>
+            </div> -->
+
+            <div class="jumbotron pwd-info">
+                <div class="row result-cell">
+                    <div class="col-sm">
+                        Strength for each character in password:
+                    </div>
+                </div>
+                <div class="row result-cell">
+                    <div class="col-sm result-center">
+                        <div id="cpg-message" class="" style="min-height: 30px;"></div>
+                    </div>
+                </div>
+                <div class="row result-cell">
+                    <div class="col-sm">
+                        Potential risk under targeted guessing:
+                    </div>
+                </div>
+                <div class="row result-cell">
+                    <div class="col-sm result-center" style="font-size: small;">
+                        <div id="tpg-message" style="min-height: 30px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- <input placeholder="Enter your password" name="password" type="password" id="pwd_input"/>
+        <button onclick="eval_pwd()">Check</button>
+        <div id="message"></div> -->
+    </body>
+    <script>
+        var cpg_model=null;
+        var tpg_model=null;
+        var tokenizer =null;
+        var res;
+        var pwdVisible = false;
+        var global_pwd = "******";
+        var global_probs = [0.001,0.001,0.001,0.001,0.001,0.001];
+        var global_risks = [];
+        var topk = 100;
+
+        function init_setting(){
+            /* Top 20 passwords */
+            let pwds = [
+            "123456",
+            "123456789",
+            "Qwerty",
+            "Password",
+            "12345",
+            "12345678",
+            "111111",
+            "1234567",
+            "123123",
+            "Qwerty123",
+            "1q2w3e",
+            "1234567890",
+            "DEFAULT",
+            "Abc123",
+            "654321",
+            "123321",
+            "Qwertyuiop",
+            "Iloveyou",
+            "666666"
+            ];
+            let msg = "";
+            for(let pwd of pwds){
+                msg += pwd + "&#10;";
+            }
+            document.getElementById("leak_pwds").innerHTML = msg;
+            show_cpg_result();
+            show_tpg_result();
+        }
+
+        function hidden_pwd(pwd){
+            let ans = "";
+            for(let i = 0; i < pwd.length; i++){
+                ans += "*";
+            }
+            return ans;
+        }
+
+        function change_hidden_state(){
+            pwdVisible = !pwdVisible;
+            show_cpg_result();
+            show_tpg_result();
+            document.getElementById("btn-visible").innerHTML = pwdVisible?"Invisible":"Visible";
+        }
+
+        function change_topk(){
+            topk *= 10;
+            if(topk > 1000){
+                topk = 1;
+            }
+            document.getElementById("btn-topk").innerHTML = "Top " + topk;
+        }
+
+        async function load(){
+            var start = new Date().getTime();
+            tpg_model = await tf.loadGraphModel('model/TPG/model.json');
+            console.log("Completely load TPG model");
+            var end = new Date().getTime();
+            console.log("Model loading time: "+(end-start) + " s");
+
+            start = new Date().getTime();
+            cpg_model = await tf.loadGraphModel('model/CPG/model.json');
+            console.log("Completely load CPG model");
+            end = new Date().getTime();
+            console.log("Model loading time: "+(end-start) + " s");
+
+            start = new Date().getTime();
+            await $.ajax({ 
+                type:"GET", 
+                url:"model/vocab.json", 
+                dataType:"json", 
+                success:function(data){ 
+                    config = data;
+                    tokenizer = new Tokenizer(config);
+                    console.log("Configuration load successfully");
+                } 
+            }); 
+            end = new Date().getTime();
+            console.log("Vocaburary loading time: "+(end-start) + " s");
+        }
+
+        async function predict_cpg(pwd){
+            let cpg = new CPGEvaluator(cpg_model, tokenizer);
+            let input = cpg.encode_input(pwd);
+            const prediction = await cpg_model.executeAsync(input);
+            const result = cpg.evaluate(pwd, prediction.arraySync());
+            console.log(result);
+            return result;
+        }
+
+        async function predict_tpg(pwd){
+            let trans = new InplaceDict();
+            //console.log(trans.ops);
+            //console.log(trans.recover("123456",[1,2,3,4,5,6,210]));
+
+            let tpg = new TPGEvaluator(tpg_model, tokenizer);
+            const prediction = await tpg_model.executeAsync(tpg.encode_input(pwd));
+            console.log(prediction.arraySync())
+            let ans = tpg.top_k(prediction.arraySync(), topk);
+            let targets = [];
+            for(let item of ans){
+                let target = trans.recover(pwd, item[0]);
+                targets.push([target, item[1]]);
+            }
+            return targets;
+        }
+
+        async function eval_pwd(){
+            document.getElementById("pwd_input").setAttribute("disabled","");
+            if(cpg_model == null || tpg_model == null){
+                show_result("Wait for model loading...");
+                document.getElementById("pwd_input").removeAttribute("disabled");
+                return;
+            }
+
+            let value = document.getElementById("pwd_input").value;
+            let leak_pwds = document.getElementById("leak_pwds").value;
+            let pwds = leak_pwds.split(/[(\r\n)\r\n]+/);
+            console.log(pwds);
+            let res = [];
+            for(let pwd of pwds){
+                let ans = await predict_tpg(pwd);
+                let count = 0;
+                for(let item of ans){
+                    count += 1;
+                    //console.log(item);
+                    if(item[0] == (value)){
+                        res.push([pwd,item[0],item[1], count]);
+                    }
+                }
+            }
+
+            global_risks = res;
+
+            let probs = await predict_cpg(value);
+            global_probs = probs;
+            global_pwd = value;
+
+            show_cpg_result();
+
+            show_tpg_result();
+            document.getElementById("pwd_input").removeAttribute("disabled");
+        }
+
+        function getColorByBaiFenBi(bili){
+            //var 百分之一 = (单色值范围) / 50;  单颜色的变化范围只在50%之内
+            var one = (255+255) / 100;  
+            var r=0;
+            var g=0;
+            var b=0;
+        
+            if ( bili < 50 ) { 
+                // 比例小于50的时候红色是越来越多的,直到红色为255时(红+绿)变为黄色.
+                r = one * bili;
+                g=255;
+            }
+            if ( bili >= 50 ) {
+                // 比例大于50的时候绿色是越来越少的,直到0 变为纯红
+                g =  255 - ( (bili - 50 ) * one) ;
+                r = 255;
+            }
+            r = parseInt(r);// 取整
+            g = parseInt(g);// 取整
+            b = parseInt(b);// 取整
+
+            return "rgb("+r+","+g+","+b+")";
+                
+        }
+
+        function get_item(char, prob){
+            // console.log(char, prob);
+            let levels = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.001, 0.0001, 0.00001];
+            //let levels = [0.999,0.998,0.997,0.996,0.995, 0.99, 0.98, 0.95, 0.9, 0.8, 0.7, 0.6, 0.4];
+            // let colors = [0  ,  10,  20,  30,  40,   50,   60,   70,   75,    80,  85,    90,    100];
+            let colors = [100 ,  90,  85,  80,  75,   70,   60,   50,   30,    20,  10,    5,    0];
+            let index = 0;
+            while(index < levels.length && prob < levels[index]){
+                index += 1;
+            }
+            // console.log(colors[index]);
+            return "<span style='background-color:"+getColorByBaiFenBi(colors[index])+";font-size:25px'>" +char + "</span>";
+        }
+
+        function show_cpg_result(){
+            let msg = "";
+            let pwd = global_pwd;
+            if(!pwdVisible){
+                pwd = hidden_pwd(global_pwd);
+            }
+            for(let i = 0; i < pwd.length; i++){
+                msg += get_item(pwd[i], global_probs[i]);
+            }
+            document.getElementById("cpg-message").innerHTML = msg
+        }
+
+        function show_tpg_result(){
+            let msg = '';
+            
+            msg += '<table class="table"><tbody><tr><th scope="col">Leak</th><th scope="col">Target</th><th scope="col">Probability</th><th scope="col">Guesses</th></tr><thead></thead>';
+            
+            for(let item of global_risks){
+                let pwd = item[1];
+                if(!pwdVisible){
+                    pwd = hidden_pwd(pwd);
+                }
+                msg += '<tr>' + '<td>' + item[0] + '</td><td>' + pwd + '</td><td>'+ item[2] + '</td><td>' + item[3] + '</td>' + '</tr>';
+            }
+
+            msg += '</tbody></table>';
+            document.getElementById("tpg-message").innerHTML = msg
+        }
+        load();
+        init_setting();
+    </script>
+<html>
+
