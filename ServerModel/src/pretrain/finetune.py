@@ -413,30 +413,10 @@ checkpoint = ModelCheckpoint(model_saved_path, built_model, args.save_h5)
 # saving log
 csv_logger = keras.callbacks.CSVLogger(args.log)
 
-# train_model.fit(
-#     dataset,
-#     steps_per_epoch=steps_per_epoch,
-#     epochs=epochs,
-#     callbacks=[checkpoint, csv_logger],
-# )
-# sess = tf.Session()
-# for _ in range(4):
-#     i, j = 0, 0
-#     step_i, step_j = 128, 128
-#     for _ in range(steps_per_epoch):
-#         train_bert.fit(dataset4bert.skip(i).take(step_i).repeat(), steps_per_epoch=128, epochs=1, callbacks=[checkpoint_bert])
-#         train_gpt.fit(dataset4gpt.skip(j).take(step_j).repeat(), steps_per_epoch=128, epochs=1, callbacks=[checkpoint_gpt])
-#         i, j = i + step_i, j + step_j
-#     dataset4bert.shuffle(batch_size * 1000)
-#     dataset4gpt.shuffle(batch_size * 1000)
-#     pass
-# train_bert.train_on_batch(
-#     x = {
-#         'Input-Token': numpy.array([0, 1, 2, 3, 4]), 'Input-Segment': numpy.array([0, 0, 0, 0, 0]), 
-#         'token_ids': numpy.array([0, 1, 2, 3, 4]), 'is_masked': numpy.array([0, 0, 0, 0, 0])}, 
-#     y = {'mlm_loss': numpy.array([.0]), 'mlm_acc': numpy.array([.0])})
-# if args.keras_checkpoint_path is None:
+
 train_model.fit(dataset, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[checkpoint, csv_logger])
+
+
 """
 Note that the model (checkpoint) saved in callbacks could not be used in testing and evaluating.
 the following two lines will convert the format of the model and make the model avaliable.
