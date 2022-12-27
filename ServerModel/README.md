@@ -212,7 +212,7 @@ class Config:
         self.output_csv = OUTPUT_CSV
 ```
 
-Then execute the python file to launch the fine-tuning.
+Then execute the python file to launch the fine-tuning process.
 
 ```bash
 python ServerModel/src/tasks/bert4sim.py
@@ -220,7 +220,53 @@ python ServerModel/src/tasks/bert4sim.py
 
 ### ARPG
 
+Use the python script `ServerModel/src/tasks/bert4multilabels.py` to re-train an ARPG model.
 
+```bash
+python ServerModel/src/tasks/bert4multilabels.py \
+--config CONFIG_PATH \
+--model MODEL_PATH \
+--rules RULES_PATH \
+--batch-size BATCH_SIZE \
+--steps-per-epoch STEPS_PER_EPOCH \
+--epochs EPOCHS \
+--training-path TRAINING_PATH \
+--save SAVE_H5
+```
+
+Here, `CONFIG_PATH` denotes the path to configure file.
+`MODEL_PATH` denotes the path to the pre-trained model.
+`RULES_PATH` denotes the path to Hashcat rules (e.g., PasswordPro or Generated).
+`BATCH_SIZE` denotes the batch size during re-training (default 256).
+`STEPS_PER_EPOCH` denotes the steps in per epoch.
+`EPOCHS` denotes the total epochs in re-training.
+`SAVE_H5` denotes the path to save `.h5` model.
+`TRAINING_PATH` denotes the training labels.
+You can generate the same format of labels by scripts in [ADaMs](https://github.com/TheAdamProject/adams).
 
 ### Customized fine-tuning
 
+To support more password tasks with our pre-trained model, we offer a fine-tuning template to tailor the model to specific tasks.
+Use and change the script `ServerModel/src/tasks/bert4task.py` to customize a specific password model.
+
+The following code shows the process to tailor the pre-trained model for a specific task (a classification task for example).
+You can change this to adapt your tasks by modify the output layers.
+
+```python
+# tailor the model for fine-tuning
+def build_model_for_fine_tuning(config_path: str, checkpoint_path: str, num_classes: int):
+    # read the weights of transformer blocks
+    model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path)
+
+    # tailor the model for a classification task
+    output = model.output
+    output = Dense(512, activation='tanh')(output)
+    output = Dense(num_classes, activation='sigmoid')(output)
+    output = Lambda(lambda x: x[:, 0])(output)
+    model = Model(model.input, output)
+    model.compile(loss='categorical_crossentropy', optimizer=Adam(1e-5))
+    model.summary()
+    return model
+```
+
+Then you can execute the template the start a customized fine-tuning process.
