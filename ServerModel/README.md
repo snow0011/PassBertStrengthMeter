@@ -17,10 +17,9 @@ It reads a pretained model and evaluate weak characters in a given password.
 
 We adopt the configuration file to set basic hyper-parameters of our PassBERT model.
 Such configurations should be consistent with the ones in pre-training process.
-The following parameters are used in our implementation.
+The following parameters are used in our implementation (Path: `ServerModel/config/bert_config_medium.json`).
 
 ```json
-Path: ServerModel/config/bert_config_medium.json
 {
     "hidden_size": 256, 
     "hidden_act": "gelu", 
