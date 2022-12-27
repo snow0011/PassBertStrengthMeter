@@ -7,6 +7,7 @@ PassBertStrengthMeter is the open source library to apply BERT model to password
 ## Usage
 
 The ServerModel consists the python source code used in our project. We adopt the [bert4keras](https://github.com/bojone/bert4keras) library as our based framework. 
+More details about our  PassBERT model can be found in `ServerModel/`.
 
 The ClintModel is the client meter to evaluate password strength in user's browser. We deploy our PassBert model by [Tensorflowjs](https://js.tensorflow.org/api/latest/). 
 
